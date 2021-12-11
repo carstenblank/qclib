@@ -28,6 +28,7 @@ from qclib.state_preparation.schmidt import cnot_count as schmidt_cnots
 # pylint: disable=missing-function-docstring
 # pylint: disable=missing-class-docstring
 
+
 def adaptive_approximation(state_vector, max_fidelity_loss,
                             strategy='greedy', max_combination_size=0, use_low_rank=False):
     """
@@ -259,6 +260,7 @@ def _search_best(nodes):
     # the highest reduction in the number of CNOTs.
     return min(min_depth_nodes, key=lambda n: n.total_fidelity_loss)
 
+
 def _max_subsystem_size(node):
     return len(max(node.qubits, key=len))
 
@@ -351,10 +353,16 @@ def _compute_schmidt_jit(state_vector, entangled_qubits: np.ndarray, qubits_to_d
 def _to_qubits(n_state_vector):
     return int(np.ceil(np.log2(n_state_vector))) if n_state_vector > 0 else 0
 
+
 def _count_saved_cnots(entangled_vector, subsystem1_vector, subsystem2_vector):
     method = 'estimate'
-    cnots_phase_3 = schmidt_cnots(subsystem1_vector, method=method)
-    cnots_phase_4 = schmidt_cnots(subsystem2_vector, method=method)
+    if len(subsystem1_vector.shape) > 1 and subsystem1_vector.shape[1] == subsystem2_vector.shape[1] > 1:
+        cnots_new = schmidt_cnots(entangled_vector, low_rank=subsystem1_vector.shape[1], method=method)
+    else:
+        cnots_phase_3 = schmidt_cnots(subsystem1_vector, method=method)
+        cnots_phase_4 = schmidt_cnots(subsystem2_vector, method=method)
+        cnots_new = cnots_phase_3 + cnots_phase_4
+
     cnots_originally = schmidt_cnots(entangled_vector, method=method)
 
-    return cnots_originally - cnots_phase_3 - cnots_phase_4
+    return cnots_originally - cnots_new
