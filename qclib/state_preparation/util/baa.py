@@ -228,10 +228,10 @@ def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', m
     # If it is not the end of the recursion,
     if clear_memory and len(searched_node.nodes) > 0:
         # clear vectors and qubits to save memory.
-        node.vectors.clear()
+        searched_node.vectors.clear()
         # This information is no longer needed from this point
         # on (but may be needed in the future).
-        node.qubits.clear()
+        searched_node.qubits.clear()
 
     _next_level(searched_node, max_fidelity_loss, strategy, max_k, use_low_rank)
 
