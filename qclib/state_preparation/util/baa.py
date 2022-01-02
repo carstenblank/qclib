@@ -154,7 +154,7 @@ class Node:
                f'ranks\n{str_ranks}'
 
 
-def _combinations(entangled_vector, entangled_qubits, disentanglement_list, use_low_rank):
+def _entanglement_evaluations(entangled_vector, entangled_qubits, disentanglement_list, use_low_rank):
     # Disentangles or reduces the entanglement of each bipartition of
     # entangled_qubits.
     entanglement_info_list = []
@@ -184,7 +184,7 @@ def _create_all_entanglement_informations(node, strategy, max_k, use_low_rank):
         else:
             combs = _all_combinations(entangled_qubits, max_k)
 
-        entanglement_info_list += _combinations(
+        entanglement_info_list += _entanglement_evaluations(
             entangled_vector, entangled_qubits, list(combs), use_low_rank
         )
     return entanglement_info_list
