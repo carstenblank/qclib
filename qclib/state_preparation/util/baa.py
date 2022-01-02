@@ -258,7 +258,7 @@ def _greedy_combinations(entangled_vector, entangled_qubits, max_k):
             entanglement_info = \
                 _reduce_entanglement(current_vector, current_qubits, [qubit_to_disentangle])
 
-            new_node = _create_node(node, -1, entanglement_info[0])
+            new_node = _create_node(node, entanglement_info[0])
 
             nodes.append(new_node)
         # Search for the node with lowest fidelity-loss.
@@ -306,12 +306,13 @@ def _reduce_entanglement(state_vector, register, partition, use_low_rank=False):
                                               fidelity_loss))
     return entanglement_info
 
-def _create_node(parent_node, index, e_info):
+def _create_node(parent_node: Node, e_info: Entanglement):
 
     vectors = parent_node.vectors.copy()
     qubits  = parent_node.qubits.copy()
     ranks = parent_node.ranks.copy()
 
+    index = parent_node.qubits.index(e_info.register)
     vectors.pop(index)
     qubits.pop(index)
     ranks.pop(index)
