@@ -130,7 +130,7 @@ class Node:
         True if the all vectors have reached an approximation assessment. There is no more
         decomposition/approximation possible. Therefore, the node is a leaf.
         """
-        return all(np.asarray(self.ranks) >= 1) or len(self.nodes) == 0
+        return all(np.asarray(self.ranks) >= 1)
 
     def num_qubits(self) -> int:
         """ Complete state number of qubits. """
@@ -171,11 +171,10 @@ def _combinations(entangled_vector, entangled_qubits, disentanglement_list, use_
 
 def _create_all_entanglement_informations(node, strategy, max_k, use_low_rank):
     # Ignore the completely disentangled qubits.
-    entangled_qubits_list  = [i for i in node.qubits if len(i) > 1]
-    entangled_vectors_list = [i for i in node.vectors if len(i) > 2]
+    data = [(q, v) for q, v, k in zip(node.qubits, node.vectors, node.ranks) if k == 0]
 
     entanglement_info_list = []
-    for entangled_vector, entangled_qubits in zip(entangled_vectors_list, entangled_qubits_list):
+    for entangled_qubits, entangled_vector in data:
 
         if not 1 <= max_k <= len(entangled_qubits)//2:
             max_k = len(entangled_qubits)//2
