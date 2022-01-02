@@ -153,14 +153,13 @@ class Node:
                f'qubits\n{str_qubits}\n' + \
                f'ranks\n{str_ranks}'
 
-def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', max_k=0,
-                                                                    use_low_rank=False):
+
+def _search_level(node, max_fidelity_loss, strategy, max_k, use_low_rank=False) -> Node:
     # Ignore the completely disentangled qubits.
     entangled_qubits_list  = [i for i in node.qubits if len(i) > 1]
     entangled_vectors_list = [i for i in node.vectors if len(i) > 2]
 
-    for i, entangled_qubits in enumerate(entangled_qubits_list):
-        entangled_vector = entangled_vectors_list[i]
+    for entangled_vector, entangled_qubits in zip(entangled_vectors_list, entangled_qubits_list):
 
         if not 1 <= max_k <= len(entangled_qubits)//2:
             max_k = len(entangled_qubits)//2
@@ -196,14 +195,14 @@ def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', m
                     new_node = _create_node(node, index, e_info)
                     node.nodes.append(new_node)
 
-    if len(node.nodes) > 0:  # If it is not the end of the recursion,
-        node.vectors.clear() # clear vectors and qubits to save memory.
-        node.qubits.clear()  # This information is no longer needed from this point
-                             # on (but may be needed in the future).
     if strategy == 'greedy' and len(node.nodes) > 0:
         # Locally optimal choice at each stage.
         node.nodes = [_search_best(node.nodes)]
 
+    return node
+
+
+def _next_level(node, max_fidelity_loss, strategy, max_k, use_low_rank=False) -> None:
     for new_node in node.nodes:
         # call _build_approximation_tree recurrently for each new node.
         # except that the vectors are matrices. In this case we are done.
@@ -211,6 +210,22 @@ def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', m
             _build_approximation_tree(
                 new_node, max_fidelity_loss, strategy, max_k, use_low_rank
             )
+
+
+def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', max_k=0,
+                              use_low_rank=False, clear_memory=True):
+    searched_node = _search_level(node, max_fidelity_loss, strategy, max_k, use_low_rank)
+
+    # If it is not the end of the recursion,
+    if clear_memory and len(searched_node.nodes) > 0:
+        # clear vectors and qubits to save memory.
+        node.vectors.clear()
+        # This information is no longer needed from this point
+        # on (but may be needed in the future).
+        node.qubits.clear()
+
+    _next_level(searched_node, max_fidelity_loss, strategy, max_k, use_low_rank)
+
 
 def _all_combinations(entangled_qubits, max_k):
     return chain.from_iterable(combinations(entangled_qubits, k)
