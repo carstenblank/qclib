@@ -169,7 +169,7 @@ def _combinations(entangled_vector, entangled_qubits, disentanglement_list, use_
     return entanglement_info_list
 
 
-def _search_level(node, max_fidelity_loss, strategy, max_k, use_low_rank=False) -> Node:
+def _create_all_entanglement_informations(node, strategy, max_k, use_low_rank):
     # Ignore the completely disentangled qubits.
     entangled_qubits_list  = [i for i in node.qubits if len(i) > 1]
     entangled_vectors_list = [i for i in node.vectors if len(i) > 2]
@@ -188,6 +188,13 @@ def _search_level(node, max_fidelity_loss, strategy, max_k, use_low_rank=False) 
         entanglement_info_list += _combinations(
             entangled_vector, entangled_qubits, list(combs), use_low_rank
         )
+    return entanglement_info_list
+
+
+def _search_level(node, max_fidelity_loss, strategy, max_k, use_low_rank=False) -> Node:
+    entanglement_info_list = _create_all_entanglement_informations(
+        node, strategy, max_k, use_low_rank
+    )
 
     node_fidelity_loss = np.array(
         [info.fidelity_loss for info in entanglement_info_list]
