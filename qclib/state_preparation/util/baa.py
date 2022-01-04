@@ -217,8 +217,8 @@ def _search_level(node, max_fidelity_loss, strategy, max_k, use_low_rank=False) 
     return node
 
 
-def _next_level(node, max_fidelity_loss, strategy, max_k, use_low_rank=False) -> None:
-    for new_node in node.nodes:
+def _next_level(nodes, max_fidelity_loss, strategy, max_k, use_low_rank=False) -> None:
+    for new_node in nodes:
         # call _build_approximation_tree recurrently for each new node.
         # except that the vectors are matrices. In this case we are done.
         if not new_node.is_leaf:
@@ -239,7 +239,7 @@ def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', m
         # on (but may be needed in the future).
         searched_node.qubits.clear()
 
-    _next_level(searched_node, max_fidelity_loss, strategy, max_k, use_low_rank)
+    _next_level(searched_node.nodes, max_fidelity_loss, strategy, max_k, use_low_rank)
 
 
 def _all_combinations(entangled_qubits, max_k):
