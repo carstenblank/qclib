@@ -105,6 +105,7 @@ class Entanglement:
     svd_v: np.ndarray
     svd_s: np.ndarray
 
+    register: List[int]
     partition: List[int]
     local_partition: List[int]
 
@@ -308,6 +309,7 @@ def _reduce_entanglement(state_vector, register, partition, use_low_rank=False):
         fidelity_loss = 1.0 - sum(low_rank_s**2)
 
         entanglement_info.append(Entanglement(rank, low_rank_u, low_rank_v, low_rank_s,
+                                              register,
                                               partition,
                                               local_partition,
                                               fidelity_loss))
