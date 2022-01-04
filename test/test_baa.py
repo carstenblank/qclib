@@ -16,6 +16,7 @@
 Tests for the baa.py module.
 """
 import sys
+from typing import Tuple
 
 from test.test_baa_schmidt import TestBaaSchmidt
 import datetime
@@ -42,7 +43,7 @@ use_parallel = os.getenv('QLIB_TEST_PARALLEL', 'False') == 'True'
 
 
 def get_vector(e_lower: float, e_upper: float, num_qubits: int,
-               start_depth_multiplier=1, measure='meyer_wallach'):
+               start_depth_multiplier=1, measure='meyer_wallach') -> Tuple[np.ndarray, float, float]:
     entanglement = -1.0
 
     if isinstance(start_depth_multiplier, int):
