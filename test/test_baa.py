@@ -310,3 +310,21 @@ class TestBaa(TestCase):
             if cnots == depth == fidelity_loss == -1:
                 continue
             self.assertAlmostEqual(0.0, fidelity_loss, 4)
+
+    def test_hpc(self):
+        from dask.distributed import Client
+        from qclib.state_preparation.hpc.baa import HPCBAA
+        print("Creating state!")
+        file_name = './test_baa_state.npy'
+        if os.path.exists(file_name):
+            state_vector = np.load(file_name)
+        else:
+            state_vector, entanglement, _ = get_vector(0.0, 1.0, 12, 1)
+            print(entanglement)
+            np.save(file_name, state_vector)
+        print("Creating Dask Cluster!")
+        client = Client(n_workers=8, threads_per_worker=1)
+        baa = HPCBAA(client)
+        print("Starting Algorithm!")
+        node = baa.adaptive_approximation(state_vector, 0.4, 'brute_force', 0, True)
+        print(node)
