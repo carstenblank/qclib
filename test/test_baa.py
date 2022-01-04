@@ -16,6 +16,7 @@
 Tests for the baa.py module.
 """
 import sys
+from typing import Tuple
 
 from test.test_baa_schmidt import TestBaaSchmidt
 import datetime
@@ -42,7 +43,7 @@ use_parallel = os.getenv('QLIB_TEST_PARALLEL', 'False') == 'True'
 
 
 def get_vector(e_lower: float, e_upper: float, num_qubits: int,
-               start_depth_multiplier=1, measure='meyer_wallach'):
+               start_depth_multiplier=1, measure='meyer_wallach') -> Tuple[np.ndarray, float, float]:
     entanglement = -1.0
 
     if isinstance(start_depth_multiplier, int):
@@ -317,3 +318,21 @@ class TestBaa(TestCase):
             if cnots == depth == fidelity_loss == -1:
                 continue
             self.assertAlmostEqual(0.0, fidelity_loss, 4)
+
+    def test_hpc(self):
+        from dask.distributed import Client
+        from qclib.state_preparation.hpc.baa import HPCBAA
+        print("Creating state!")
+        file_name = './test_baa_state.npy'
+        if os.path.exists(file_name):
+            state_vector = np.load(file_name)
+        else:
+            state_vector, entanglement, _ = get_vector(0.0, 1.0, 12, 1)
+            print(entanglement)
+            np.save(file_name, state_vector)
+        print("Creating Dask Cluster!")
+        client = Client(n_workers=8, threads_per_worker=1)
+        baa = HPCBAA(client)
+        print("Starting Algorithm!")
+        node = baa.adaptive_approximation(state_vector, 0.4, 'brute_force', 0, True)
+        print(node)

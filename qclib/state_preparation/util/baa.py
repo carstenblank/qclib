@@ -157,11 +157,27 @@ class Node:
                f'qubits\n{str_qubits}\n' + \
                f'ranks\n{str_ranks}'
 
-def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', max_k=0,
-                                                                    use_low_rank=False):
+
+def _entanglement_evaluations(entangled_vector, entangled_qubits, disentanglement_list, use_low_rank):
+    # Disentangles or reduces the entanglement of each bipartition of
+    # entangled_qubits.
+    entanglement_info_list = []
+    for partition in disentanglement_list:
+        # Computes the two state vectors after disentangling "partition".
+        # If the bipartition cannot be fully disentangled, an approximate
+        # state is returned.
+        e_info_list = _reduce_entanglement(
+            entangled_vector, entangled_qubits, partition, use_low_rank
+        )
+        entanglement_info_list += e_info_list
+    return entanglement_info_list
+
+
+def _create_all_entanglement_informations(node, strategy, max_k, use_low_rank):
     # Ignore the completely disentangled qubits.
     data = [(q, v) for q, v, k in zip(node.qubits, node.vectors, node.ranks) if k == 0]
 
+    entanglement_info_list = []
     for entangled_qubits, entangled_vector in data:
 
         if not 1 <= max_k <= len(entangled_qubits)//2:
@@ -172,46 +188,63 @@ def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', m
         else:
             combs = _all_combinations(entangled_qubits, max_k)
 
-        # Disentangles or reduces the entanglement of each bipartition of
-        # entangled_qubits.
-        for partition in combs:
-            # Computes the two state vectors after disentangling "partition".
-            # If the bipartition cannot be fully disentangled, an approximate
-            # state is returned.
-            entanglement_info = _reduce_entanglement(
-                entangled_vector, entangled_qubits, partition, use_low_rank
-            )
+        entanglement_info_list += _entanglement_evaluations(
+            entangled_vector, entangled_qubits, list(combs), use_low_rank
+        )
+    return entanglement_info_list
 
-            node_fidelity_loss = np.array([e_info.fidelity_loss for e_info in entanglement_info])
-            total_fidelity_loss = 1.0 - (1.0 - node_fidelity_loss) * \
-                                        (1.0 - node.total_fidelity_loss)
 
-            for e_info, loss in zip(entanglement_info, total_fidelity_loss):
-                # Recursion should not continue in this branch if
-                # "total_fidelity_loss" has reached "max_fidelity_loss".
-                # The leaf corresponds to the node of the best approximation of
-                # "max_fidelity_loss" on the branch.
-                if loss <= max_fidelity_loss:
-                    index = node.qubits.index(entangled_qubits)
-                    new_node = _create_node(node, index, e_info)
-                    if new_node.total_saved_cnots > 0:
-                        node.nodes.append(new_node)
+def _search_level(node, max_fidelity_loss, strategy, max_k, use_low_rank=False) -> Node:
+    entanglement_info_list = _create_all_entanglement_informations(
+        node, strategy, max_k, use_low_rank
+    )
 
-    if len(node.nodes) > 0:  # If it is not the end of the recursion,
-        node.vectors.clear() # clear vectors and qubits to save memory.
-        node.qubits.clear()  # This information is no longer needed from this point
-                             # on (but may be needed in the future).
+    node_fidelity_loss = np.array(
+        [info.fidelity_loss for info in entanglement_info_list]
+    )
+    total_fidelity_loss = 1.0 - (1.0 - node_fidelity_loss) * \
+                                (1.0 - node.total_fidelity_loss)
+    # Removing all those nodes, whose total fidelity loss exceed beyond the required threshold
+    filtered_nodes = [
+        _create_node(node, e_info)
+        for e_info, loss in zip(entanglement_info_list, total_fidelity_loss)
+        if loss <= max_fidelity_loss
+    ]
+    # Also, we remove all those partitions, that don't give us any advantage! This saves a lot
+    # of recursions!
+    node.nodes = [n for n in filtered_nodes if n.node_saved_cnots > 0]
+
     if strategy == 'greedy' and len(node.nodes) > 0:
         # Locally optimal choice at each stage.
         node.nodes = [_search_best(node.nodes)]
 
-    for new_node in node.nodes:
+    return node
+
+
+def _next_level(nodes, max_fidelity_loss, strategy, max_k, use_low_rank=False) -> None:
+    for new_node in nodes:
         # call _build_approximation_tree recurrently for each new node.
         # except that the vectors are matrices. In this case we are done.
         if not new_node.is_leaf:
             _build_approximation_tree(
                 new_node, max_fidelity_loss, strategy, max_k, use_low_rank
             )
+
+
+def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', max_k=0,
+                              use_low_rank=False, clear_memory=True):
+    searched_node = _search_level(node, max_fidelity_loss, strategy, max_k, use_low_rank)
+
+    # If it is not the end of the recursion,
+    if clear_memory and len(searched_node.nodes) > 0:
+        # clear vectors and qubits to save memory.
+        searched_node.vectors.clear()
+        # This information is no longer needed from this point
+        # on (but may be needed in the future).
+        searched_node.qubits.clear()
+
+    _next_level(searched_node.nodes, max_fidelity_loss, strategy, max_k, use_low_rank)
+
 
 def _all_combinations(entangled_qubits, max_k):
     return chain.from_iterable(combinations(entangled_qubits, k)
@@ -235,7 +268,7 @@ def _greedy_combinations(entangled_vector, entangled_qubits, max_k):
             entanglement_info = \
                 _reduce_entanglement(current_vector, current_qubits, [qubit_to_disentangle])
 
-            new_node = _create_node(node, -1, entanglement_info[0])
+            new_node = _create_node(node, entanglement_info[0])
 
             nodes.append(new_node)
         # Search for the node with lowest fidelity-loss.
@@ -280,13 +313,14 @@ def _reduce_entanglement(state_vector, register, partition, use_low_rank=False):
                                               fidelity_loss))
     return entanglement_info
 
-def _create_node(parent_node, index, e_info):
+def _create_node(parent_node: Node, e_info: Entanglement):
 
     vectors = parent_node.vectors.copy()
     qubits = parent_node.qubits.copy()
     ranks = parent_node.ranks.copy()
     partitions = parent_node.partitions.copy()
 
+    index = parent_node.qubits.index(e_info.register)
     original_vector = vectors.pop(index)
     original_qubits = qubits.pop(index)
     original_rank = ranks.pop(index)
