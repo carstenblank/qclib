@@ -62,23 +62,25 @@ def adaptive_approximation(state_vector, max_fidelity_loss, strategy='greedy',
     Returns:
         Node: a node with the data required to build the quantum circuit.
     """
+
     n_qubits = _to_qubits(len(state_vector))
+
+    # Completely separates the state to estimate the maximum possible fidelity loss.
+    # If max_fidelity_loss input is higher than the estimated loss, it runs the full
+    # routine with potentially exponential cost.
+    entanglement, product_state = geometric_entanglement(state_vector, return_product_state=True)
+    if max_fidelity_loss >= entanglement:
+        qubits = [[n] for n in range(n_qubits)]
+        ranks = [1] * n_qubits
+        partitions = [None] * n_qubits
+        return Node(
+            0, 0, entanglement, entanglement, product_state, qubits, ranks, partitions, []
+        )
 
     vectors = [state_vector]
     qubits = [list(range(n_qubits))]
     ranks = [0]
     partitions = [None]
-
-    entanglement, product_state = geometric_entanglement(state_vector, return_product_state=True)
-    if max_fidelity_loss >= entanglement:
-        full_cnots = schmidt_cnots(state_vector)
-        qubits = [[n] for n in range(len(product_state))]
-        ranks = [1 for _ in range(len(product_state))]
-        partitions = [None for _ in range(len(product_state))]
-        return Node(
-            full_cnots, full_cnots, entanglement, entanglement, product_state,
-            qubits, ranks, partitions, []
-        )
 
     root_node = Node(0, 0, 0.0, 0.0, vectors, qubits, ranks, partitions, [])
     _build_approximation_tree(root_node, max_fidelity_loss, strategy,
@@ -132,8 +134,9 @@ class Node:
     @property
     def is_leaf(self) -> bool:
         """
-        True if the all vectors have reached an approximation assessment. There is no more
-        decomposition/approximation possible. Therefore, the node is a leaf.
+        True if the all vectors have reached an approximation assessment. There
+        is no more decomposition/approximation possible. Therefore, the node is
+        a leaf.
         """
         return all(np.asarray(self.ranks) >= 1)
 
@@ -176,10 +179,10 @@ def _entanglement_evaluations(entangled_vector, entangled_qubits, disentanglemen
 
 def _create_all_entanglement_informations(node, strategy, max_k, use_low_rank):
     # Ignore the completely disentangled qubits.
-    data = [(q, v) for q, v, k in zip(node.qubits, node.vectors, node.ranks) if k == 0]
+    node_data = [(q, v) for q, v, k in zip(node.qubits, node.vectors, node.ranks) if k == 0]
 
     entanglement_info_list = []
-    for entangled_qubits, entangled_vector in data:
+    for entangled_qubits, entangled_vector in node_data:
 
         if not 1 <= max_k <= len(entangled_qubits)//2:
             max_k = len(entangled_qubits)//2
@@ -226,7 +229,7 @@ def _next_level(nodes, max_fidelity_loss, strategy, max_k, use_low_rank=False) -
     for new_node in nodes:
         # call _build_approximation_tree recurrently for each new node.
         # except that the vectors are matrices. In this case we are done.
-        if not new_node.is_leaf:
+        if not new_node.is_leaf:  # Saves one call for each leaf node.
             _build_approximation_tree(
                 new_node, max_fidelity_loss, strategy, max_k, use_low_rank
             )
@@ -332,17 +335,17 @@ def _create_node(parent_node: Node, e_info: Entanglement):
         # The partition qubits have been completely disentangled from the
         # rest of the register. Therefore, the original entangled state is
         # removed from the list and two new separate states are included.
-        partition1 = tuple(set(original_qubits).difference(set(e_info.partition)))
+        partition1 = tuple( sorted(set(original_qubits).difference(set(e_info.partition))) )
         partition2 = e_info.partition
 
         vectors.append(e_info.svd_v.T[:, 0])
         qubits.append(partition2)
-        ranks.append(1 if e_info.svd_v.T[:, 0].shape[0] == 2 else 0)
-        partitions.append(None)
+        ranks.append(1 if len(partition2) == 1 else 0) # Single qubit states can
+        partitions.append(None)                        # no longer be disentangled.
 
         vectors.append(e_info.svd_u[:, 0])
         qubits.append(partition1)
-        ranks.append(1 if e_info.svd_u.T[:, 0].shape[0] == 2 else 0)
+        ranks.append(1 if len(partition1) == 1 else 0)
         partitions.append(None)
 
         node_saved_cnots = _count_saved_cnots(
