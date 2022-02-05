@@ -17,6 +17,7 @@ Tests for the baa.py module.
 """
 import sys
 
+from qclib.state_preparation.util.baa import adaptive_approximation
 from test.test_baa_schmidt import TestBaaSchmidt
 import datetime
 import os
@@ -317,3 +318,35 @@ class TestBaa(TestCase):
             if cnots == depth == fidelity_loss == -1:
                 continue
             self.assertAlmostEqual(0.0, fidelity_loss, 4)
+
+    def test_probability_distribution(self):
+        # The Test is based on randomly generated states. They all should
+        # create the correct fidelity (1.0). After 10 attempts we may well
+        # find one that fails. If it doesn't it is probably okay.
+        import scipy.stats as stats
+        x = np.linspace(0, 20, 128)
+        y = stats.lognorm.pdf(x, s=1)
+        y = y * (x[1] - x[0])
+        state_vector = np.sqrt(y)
+        state_vector = state_vector / np.linalg.norm(state_vector)
+
+        entanglement_g = geometric_entanglement(state_vector)
+        entanglement_mw = meyer_wallach_entanglement(state_vector)
+        print(entanglement_g, entanglement_mw)
+
+        node = adaptive_approximation(
+            state_vector, 0.23, strategy='brute_force', use_low_rank=True, figure_of_merit='mse'
+        )
+        print(node)
+        print(node.total_figure_of_merit)
+
+        import matplotlib.pyplot as plt
+        fig = plt.figure(figsize=(10, 10))
+
+        plt.plot(x, y)
+        plt.plot(x, node.state_vector() ** 2)
+        plt.xticks(fontsize=24, fontfamily='times new roman')
+        plt.yticks(fontsize=24, fontfamily='times new roman')
+        plt.ylabel(f'pdf ', fontsize=36, fontfamily='times new roman')
+        plt.xlabel('max fidelity loss', fontsize=36, fontfamily='times new roman')
+        fig.show()

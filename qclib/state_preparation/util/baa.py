@@ -16,7 +16,7 @@
 Bounded Approximation Algorithm.
 https://arxiv.org/abs/2111.03132
 """
-
+import sys
 from dataclasses import dataclass
 from itertools import combinations, chain
 from typing import List, Optional, Tuple
@@ -32,8 +32,8 @@ from qclib.state_preparation.schmidt import cnot_count as schmidt_cnots, \
 
 # pylint: disable=missing-class-docstring
 
-def adaptive_approximation(state_vector, max_fidelity_loss, strategy='greedy',
-                                        max_combination_size=0, use_low_rank=False):
+def adaptive_approximation(state_vector, max_figure_of_merit, strategy='greedy',
+                           max_combination_size=0, use_low_rank=False, figure_of_merit = 'fidelity_loss'):
     """
     It reduces the entanglement of the given state, producing an approximation
     to reduce the complexity of the quantum circuit needed to prepare it.
@@ -41,7 +41,7 @@ def adaptive_approximation(state_vector, max_fidelity_loss, strategy='greedy',
     Args:
         state_vector (list):
             A state vector to be approximated by a less complex state.
-        max_fidelity_loss (float):
+        max_figure_of_merit (float):
             Maximum fidelity loss allowed to the approximated state.
         strategy (string):
             Method to search for the best approximation ('brute_force' or 'greedy').
@@ -69,7 +69,7 @@ def adaptive_approximation(state_vector, max_fidelity_loss, strategy='greedy',
     # If max_fidelity_loss input is lower than the estimated loss, it runs the full
     # routine with potentially exponential cost.
     entanglement, product_state = geometric_entanglement(state_vector, return_product_state=True)
-    if max_fidelity_loss >= entanglement:
+    if max_figure_of_merit >= entanglement and figure_of_merit == 'fidelity_loss':
         qubits = [(n,) for n in range(n_qubits)]
         ranks = [1] * n_qubits
         partitions = [None] * n_qubits
@@ -83,13 +83,13 @@ def adaptive_approximation(state_vector, max_fidelity_loss, strategy='greedy',
     partitions = [None]
 
     root_node = Node(0, 0, 0.0, 0.0, vectors, qubits, ranks, partitions, [])
-    _build_approximation_tree(root_node, max_fidelity_loss, strategy,
-                                    max_combination_size, use_low_rank)
+    _build_approximation_tree(root_node, max_figure_of_merit, strategy,
+                              max_combination_size, use_low_rank, figure_of_merit)
 
     leaves = []
     _search_leaves(root_node, leaves)
 
-    best_node = _search_best(leaves)
+    best_node = _search_best(leaves, max_figure_of_merit, state_vector, figure_of_merit)
 
     return best_node
 
@@ -111,7 +111,14 @@ class Entanglement:
     partition: Tuple[int]
     local_partition: Tuple[int]
 
-    fidelity_loss: float
+    def fidelity_loss(self) -> float:
+        return 1.0 - sum(self.svd_s ** 2)
+
+    def approximate_state(self):
+        normed_svd_s = self.svd_s/sqrt( 1.0 - self.fidelity_loss() )
+        return schmidt_composition(
+            self.svd_u, self.svd_v, normed_svd_s, self.local_partition
+        )
 
 @dataclass
 class Node:
@@ -130,6 +137,9 @@ class Node:
     partitions: List[Optional[Tuple[int]]]
 
     nodes: List['Node']
+
+    node_figure_of_merit: float = 0.0
+    total_figure_of_merit: float = 0.0
 
     @property
     def is_leaf(self) -> bool:
@@ -161,8 +171,8 @@ class Node:
                f'qubits\n{str_qubits}\n' + \
                f'ranks\n{str_ranks}'
 
-def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', max_k=0,
-                                                                    use_low_rank=False):
+def _build_approximation_tree(node, max_figure_of_merit, strategy='brute_force', max_k=0,
+                              use_low_rank=False, figure_of_merit='fidelity_loss'):
     # Ignore states that are already completely or partially disentangled.
     node_data = [(q, v) for q, v, k in zip(node.qubits, node.vectors, node.ranks) if k == 0]
 
@@ -186,17 +196,13 @@ def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', m
                 entangled_vector, entangled_qubits, partition, use_low_rank
             )
 
-            node_fidelity_loss = np.array([e_info.fidelity_loss for e_info in entanglement_info])
-            total_fidelity_loss = 1.0 - (1.0 - node_fidelity_loss) * \
-                                        (1.0 - node.total_fidelity_loss)
-
-            for e_info, loss in zip(entanglement_info, total_fidelity_loss):
+            for e_info in entanglement_info:
                 # Recursion should not continue for this branch if
                 # "total_fidelity_loss" has reached "max_fidelity_loss".
                 # The leaf corresponds to the node of the best approximation of
                 # "max_fidelity_loss" on the branch.
-                if loss <= max_fidelity_loss:
-                    new_node = _create_node(node, e_info)
+                new_node = _create_node(node, e_info, figure_of_merit)
+                if new_node.total_figure_of_merit <= max_figure_of_merit:
                     if new_node.total_saved_cnots > 0:
                         node.nodes.append(new_node)
 
@@ -206,13 +212,13 @@ def _build_approximation_tree(node, max_fidelity_loss, strategy='brute_force', m
                              # on (but may be needed in the future).
     if strategy == 'greedy' and len(node.nodes) > 0:
         # Locally optimal choice at each stage.
-        node.nodes = [_search_best(node.nodes)]
+        node.nodes = [_search_best(node.nodes, 1.0)]
 
     for new_node in node.nodes:
         # call _build_approximation_tree recurrently for each new node.
         if not new_node.is_leaf: # Saves one call for each leaf node.
             _build_approximation_tree(
-                new_node, max_fidelity_loss, strategy, max_k, use_low_rank
+                new_node, max_figure_of_merit, strategy, max_k, use_low_rank
             )
 
 def _all_combinations(entangled_qubits, max_k):
@@ -248,7 +254,7 @@ def _greedy_combinations(entangled_vector, entangled_qubits, max_k):
 
             nodes.append(new_node)
         # Search for the node with lowest fidelity-loss.
-        node = _search_best(nodes)
+        node = _search_best(nodes, 1.0)
 
     # Build the partitions by incrementing the number of selected qubits.
     # Returns only one partition for each length k.
@@ -283,16 +289,47 @@ def _reduce_entanglement(state_vector, register, partition, use_low_rank=False):
         if rank < low_rank:
             break # No need to go any further, as the maximum effective rank has been reached.
 
-        fidelity_loss = 1.0 - sum(low_rank_s**2)
-
-        entanglement_info.append(Entanglement(rank, low_rank_u, low_rank_v, low_rank_s,
-                                              register,
-                                              partition,
-                                              local_partition,
-                                              fidelity_loss))
+        entanglement_info.append(Entanglement(
+            rank, low_rank_u, low_rank_v, low_rank_s,
+            register, partition, local_partition
+        ))
     return entanglement_info
 
-def _create_node(parent_node, e_info):
+def calculate_figure_of_merit(parent_node: Node, entanglement_info: Entanglement, figure_of_merit: str):
+
+    if figure_of_merit == 'fidelity_loss':
+        child_fidelity_loss = entanglement_info.fidelity_loss()
+        total_fidelity_loss = 1.0 - (1.0 - entanglement_info.fidelity_loss()) * \
+                              (1.0 - parent_node.total_figure_of_merit)
+        return child_fidelity_loss, total_fidelity_loss
+    elif figure_of_merit == 'mse':
+        # The MSE is harder to recursively calculate. But we can use the sub-additivity of the Euclidean norm
+        # The current (upper bound) of the MSE is given from the last node
+        d_x_1_y = parent_node.total_figure_of_merit
+        # The current node's state vector must be calculated to a probability distribution
+        x_1 = np.abs(parent_node.state_vector()) ** 2
+        # As well as the (possible) sub-nodes of it
+        x_2 = np.abs(entanglement_info.approximate_state()) ** 2
+        # The MSE between both current node and all its (possible) children
+        d_x_2_x_1 = np.average((x_2 - x_1 / np.max(x_2 - x_1))**2)
+        # The upper bound of the total figure of merit (MSE) is given here
+        d_x_2_y_ub = d_x_2_x_1 + d_x_1_y
+        # This is what we will save. It will be an overestimate.
+        # This results in too many children needing evaluation!
+        # In the lower comment, there is a way to calculate it more precisely,
+        # if we save more data along the way.
+        # This is not correct, as the sign is lost in the "inner products"
+        # new_total_figure_of_merit = d_x_2_x_1 + d_x_1_y + 2 * (
+        #     np.sqrt(1 - node_fidelity_loss)
+        #     - np.sqrt(1 - total_fidelity_loss)
+        #     - np.linalg.norm(x_1)
+        #     + np.sqrt(1 - node.total_fidelity_loss)
+        # )
+        return d_x_2_x_1, d_x_2_y_ub
+    else:
+        raise ValueError(f"The figure of merit '{figure_of_merit}' is not recognized")
+
+def _create_node(parent_node: Node, e_info: Entanglement, figure_of_merit: str = 'fidelity_loss'):
 
     vectors = parent_node.vectors.copy()
     qubits = parent_node.qubits.copy()
@@ -331,10 +368,7 @@ def _create_node(parent_node, e_info):
         # The entanglement between partition qubits and the rest of the
         # register has been reduced, but not eliminated. Therefore, the
         # original state is replaced by an approximate state.
-        normed_svd_s = e_info.svd_s/sqrt( 1.0 - e_info.fidelity_loss )
-        approximate_state = schmidt_composition(e_info.svd_u, e_info.svd_v,
-                                                normed_svd_s, e_info.local_partition)
-        vectors.append(approximate_state)
+        vectors.append(e_info.approximate_state())
         qubits.append(original_qubits)
         ranks.append(e_info.rank)
         partitions.append(e_info.local_partition)
@@ -346,11 +380,16 @@ def _create_node(parent_node, e_info):
                             )
 
     total_saved_cnots = parent_node.total_saved_cnots + node_saved_cnots
-    total_fidelity_loss = 1.0 - (1.0 - e_info.fidelity_loss) * \
+    total_fidelity_loss = 1.0 - (1.0 - e_info.fidelity_loss()) * \
                                 (1.0 - parent_node.total_fidelity_loss)
+    node_figure_of_merit, total_figure_of_merit = calculate_figure_of_merit(parent_node, e_info, figure_of_merit)
 
-    return Node(node_saved_cnots, total_saved_cnots, e_info.fidelity_loss,
-                    total_fidelity_loss, vectors, qubits, ranks, partitions, [])
+    child_node = Node(node_saved_cnots, total_saved_cnots, e_info.fidelity_loss(),
+                      total_fidelity_loss, vectors, qubits, ranks, partitions, [])
+    child_node.node_figure_of_merit = node_figure_of_merit
+    child_node.total_figure_of_merit = total_figure_of_merit
+
+    return child_node
 
 def _search_leaves(node, leaves):
     # It returns the leaves of the tree. These nodes are the ones with
@@ -361,20 +400,39 @@ def _search_leaves(node, leaves):
         for child in node.nodes:
             _search_leaves(child, leaves)
 
-def _search_best(nodes):
+def evaluate_fidelity_loss(max_figure_of_merit):
+    def _inner(node):
+        return node.total_fidelity_loss if node.total_fidelity_loss <= max_figure_of_merit else sys.maxsize
+    return _inner
+
+def evaluate_mse(max_figure_of_merit: float, original_state: np.ndarray):
+    def _inner(node: Node):
+        mse = np.linalg.norm(np.abs(original_state) ** 2 - np.abs(node.state_vector()) ** 2)
+        return mse if mse <= max_figure_of_merit else sys.maxsize
+    return _inner
+
+def _search_best(nodes, max_figure_of_merit, original_state: Optional[list] = None, figure_of_merit = 'fidelity_loss'):
     # Nodes with the greatest reduction in the number of CNOTs.
     # There may be several with the same number.
     max_total_saved_cnots = max(nodes, key=lambda n: n.total_saved_cnots).total_saved_cnots
     max_saved_cnots_nodes = [node for node in nodes
                                 if node.total_saved_cnots == max_total_saved_cnots]
-    # Nodes with the minimum depth (wich depends on the size of the node's largest subsystem).
+    # Nodes with the minimum depth (which depends on the size of the node's largest subsystem).
     # Shallower circuits with the same number of CNOTs means more parallelism.
     min_depth = _max_subsystem_size(min(max_saved_cnots_nodes, key=_max_subsystem_size))
     min_depth_nodes = [node for node in max_saved_cnots_nodes
                                 if _max_subsystem_size(node) == min_depth]
+
     # Node with the lowest fidelity loss among the nodes with
     # the highest reduction in the number of CNOTs.
-    return min(min_depth_nodes, key=lambda n: n.total_fidelity_loss)
+    if figure_of_merit == 'fidelity_loss':
+        key = evaluate_fidelity_loss(max_figure_of_merit)
+    elif figure_of_merit == 'mse' and original_state is not None:
+        original_state = np.asarray(original_state)
+        key = evaluate_mse(max_figure_of_merit, original_state)
+    else:
+        raise ValueError(f"The figure of merit '{figure_of_merit}' is not or not correctly configured.")
+    return min(min_depth_nodes, key=key)
 
 def _max_subsystem_size(node):
     return len(max(node.qubits, key=len))
