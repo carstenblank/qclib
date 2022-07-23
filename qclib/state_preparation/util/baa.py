@@ -150,6 +150,22 @@ class Node:
         """ Complete state number of qubits. """
         return len([e for qb_list in self.qubits for e in qb_list])
 
+    def cnot_count(self):
+        """
+        Computes the total number of cnots and the max depth of cnots.
+        When a partition of the original space was separated, it can
+        be created in parallel.
+
+        Returns: (tuple)
+        total number of cnot-gates, max cnot depth
+
+        """
+        cnot_gates = []
+        for vec, rank, partition in zip(self.vectors, self.ranks, self.partitions):
+            cnot_count = schmidt_cnots(vec, low_rank=rank, partition=partition)
+            cnot_gates.append(cnot_count)
+        return sum([c for c in cnot_gates]), max(cnot_gates)
+
     def state_vector(self) -> np.ndarray:
         """ Complete state vector. """
         # The vectors are not necessarily in the correct order, but these are
