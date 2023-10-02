@@ -181,7 +181,7 @@ class Node:
         # Reshaping the vector must take the qubit structure into account.
         no_qubits = len(flatten_qubits)
         qubit_shape = [2] * no_qubits
-        state = kronecker(self.vectors).reshape(qubit_shape)
+        state = np.asarray(kronecker(self.vectors)).reshape(qubit_shape)
         # Moveaxis to the rescue: we now can move the qubits axis and reshape to a vector
         state = np.moveaxis(state, new_order, range(len(new_order))).reshape(
             -1,
