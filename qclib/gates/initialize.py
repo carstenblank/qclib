@@ -35,11 +35,11 @@ class Initialize(Gate):
 
         # Check if param is a power of 2
         if self.num_qubits == 0 or not self.num_qubits.is_integer():
-            Exception("The length of the state vector is not a positive power of 2.")
+            raise Exception("The length of the state vector is not a positive power of 2.")
 
         # Check if probabilities (amplitudes squared) sum to 1
         if not isclose(sum(np.absolute(params) ** 2), 1.0, abs_tol=1e-10):
-            Exception("Sum of amplitudes-squared does not equal one.")
+            raise Exception("Sum of amplitudes-squared does not equal one.")
 
         self.num_qubits = int(self.num_qubits)
 
