@@ -23,7 +23,7 @@ from qclib.gates.mcx import McxVchainDirty, LinearMcx
 
 
 def apply_control_state_on_quantum_circuit(
-    quantum_circuit: QuantumCircuit, control_qubits: QuantumRegister, ctrl_state: str
+        quantum_circuit: QuantumCircuit, control_qubits: QuantumRegister, ctrl_state: str
 ):
     """
     Applies the X gate to the corresponding qubit in which the
@@ -119,12 +119,12 @@ class TestLinearMCX(TestCase):
             self.assertLess(tr_mcx_dirty_ancilla.depth(), tr_mcx_qiskit.depth())
 
     def _operator_cmp(
-        self,
-        num_qubits,
-        mcx_method: LinearMcx,
-        mode: str,
-        ctrl_state: str = None,
-        action_only=False,
+            self,
+            num_qubits,
+            mcx_method: LinearMcx,
+            mode: str,
+            ctrl_state: str = None,
+            action_only=False,
     ):
         """
         Compares if the custom operator defined by the custom MCX method is the same
@@ -153,10 +153,10 @@ class TestLinearMCX(TestCase):
         self.assertTrue(np.allclose(mcx_method_op, mcx_qiskit_op))
 
     def _build_qiskit_method_mcx_recursive(
-        self,
-        num_qubits,
-        ctrl_state: str = None,
-        mode="recursive",
+            self,
+            num_qubits,
+            ctrl_state: str = None,
+            mode="recursive",
     ):
         """
         Bulds qiskit quantum circuit with mcx-recursive
@@ -262,7 +262,7 @@ class TestMcxVchainDirty(TestCase):
                 mode="v-chain-dirty",
                 ctrl_state=ctrl_state,
             )
-    
+
     def test_mcx_v_chain_3targets(self):
         """Test multiple targets McxVchainDirty"""
 
@@ -279,27 +279,28 @@ class TestMcxVchainDirty(TestCase):
         for target_idx in range(6, 9):
             qiskit_circuit.mcx(controls_idx, [target_idx])
 
+
         mcx_v_chain_op = Operator(mcx_v_chain_circuit).data
         qiskit_mcx_op = Operator(qiskit_circuit).data
 
         tr_mcx_v_chain = transpile(mcx_v_chain_circuit, basis_gates=["u", "cx"])
 
-        np.allclose(mcx_v_chain_op, qiskit_mcx_op)
+        self.assertTrue(np.allclose(mcx_v_chain_op, qiskit_mcx_op))
 
         if num_controls > 3:
             self.assertTrue(
-                10 + (num_controls - 2) * 8 + (num_target_qubit - 1) * 12
+                10 + 8 * (num_controls - 2) + 2 * (num_target_qubit - 1)
                 == tr_mcx_v_chain.count_ops()["cx"]
             )
 
 
     def _operator_cmp(
-        self,
-        num_controls,
-        mcx_method: McxVchainDirty,
-        mode: str,
-        ctrl_state: str = None,
-        action_only=False,
+            self,
+            num_controls,
+            mcx_method: McxVchainDirty,
+            mode: str,
+            ctrl_state: str = None,
+            action_only=False,
     ):
         """
         Compares if the custom operator defined by the custom MCX method is the same
@@ -330,10 +331,10 @@ class TestMcxVchainDirty(TestCase):
         self.assertTrue(np.allclose(mcx_method_op, mcx_v_chain_qiskit_op))
 
     def _build_qiskit_method_mcx_vchain_dirty(
-        self,
-        num_controls,
-        mode: str,
-        ctrl_state: str = None,
+            self,
+            num_controls,
+            mode: str,
+            ctrl_state: str = None,
     ):
         """
         Bulds qiskit quantum circuit with mcx-vchain-dirty
